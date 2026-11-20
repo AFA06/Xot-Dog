@@ -1,9 +1,14 @@
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, MonitorSmartphone, Package, ReceiptText, Users } from 'lucide-react'
+import { Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { LayoutDashboard, LogOut, MonitorSmartphone, Package, ReceiptText, Users } from 'lucide-react'
 import { BrandMark, DemoBadge } from '@/components/common/Brand'
 import { LanguageToggle } from '@/components/common/LanguageToggle'
+import { LoadGate } from '@/components/common/LoadGate'
+import { Button } from '@/components/ui/button'
 import { useI18n, type TranslationKey } from '@/i18n/useI18n'
 import { cn } from '@/lib/utils'
+import { dataSource } from '@/services'
+import { currentToken, isAdminRole, useSession } from '@/store/sessionStore'
+import { usePrivateData } from '@/store/usePrivateData'
 import { FilterBar } from './FilterBar'
 
 const NAV: { to: string; key: TranslationKey; icon: typeof LayoutDashboard; end?: boolean }[] = [
@@ -19,6 +24,12 @@ export function AdminLayout() {
   const { pathname } = useLocation()
   const current = NAV.find((n) => (n.end ? pathname === n.to : pathname.startsWith(n.to)))
   const showFilters = pathname === '/admin' || pathname.startsWith('/admin/orders') || pathname.startsWith('/admin/staff')
+  const role = useSession((s) => s.role)
+  const signOut = useSession((s) => s.signOut)
+  const data = usePrivateData()
+
+  // API mode: admin panel requires a manager/owner session (signed in on the launcher).
+  if (dataSource.requiresAuth && !(currentToken() && isAdminRole(role))) return <Navigate to="/" replace />
 
   return (
     <div className="flex min-h-full bg-background">
@@ -70,13 +81,29 @@ export function AdminLayout() {
             <DemoBadge label={t('app.demoBadge')} className="lg:hidden" />
             <div className="ml-auto flex items-center gap-2">
               <LanguageToggle />
+              {dataSource.requiresAuth && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground"
+                  onClick={() => {
+                    signOut()
+                    navigate('/')
+                  }}
+                  title={t('admin.signOut')}
+                >
+                  <LogOut /> <span className="hidden sm:inline">{t('admin.signOut')}</span>
+                </Button>
+              )}
             </div>
           </div>
           {showFilters && <FilterBar />}
         </header>
 
         <main className="flex-1 px-4 pt-4 pb-24 sm:px-6 lg:pb-8">
-          <Outlet />
+          <LoadGate {...data} onRetry={data.retry}>
+            <Outlet />
+          </LoadGate>
         </main>
       </div>
 

@@ -9,7 +9,9 @@ export default defineConfig({
   resolve: {
     alias: { '@': path.resolve(import.meta.dirname, './src') },
   },
-  server: { port: 5173, strictPort: true },
+  // /api → FastAPI backend (docker compose exposes it on 127.0.0.1:8010)
+  server: { port: 5173, strictPort: true, proxy: { '/api': process.env.API_PROXY_TARGET ?? 'http://127.0.0.1:8010' } },
+  preview: { proxy: { '/api': process.env.API_PROXY_TARGET ?? 'http://127.0.0.1:8010' } },
   build: { chunkSizeWarningLimit: 600 },
   test: {
     environment: 'jsdom',

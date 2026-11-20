@@ -12,6 +12,8 @@ import { branchColor, shortBranchName } from '@/lib/branch'
 import { groupDigits } from '@/lib/money'
 import { staffStats } from '@/lib/reports'
 import { cn } from '@/lib/utils'
+import { errorText } from '@/lib/errors'
+import { dataSource } from '@/services'
 import { useApp } from '@/store/appStore'
 import { toast } from '@/store/toastStore'
 import { useAdminFilters, useFilteredOrders } from '../adminFilters'
@@ -67,8 +69,12 @@ export function StaffPage() {
                   checked={s.active}
                   aria-label={t('admin.active')}
                   onCheckedChange={async (active) => {
-                    await saveStaff({ ...s, active })
-                    toast(t('admin.saved'), 'success')
+                    try {
+                      await saveStaff({ ...s, active })
+                      toast(t('admin.saved'), 'success')
+                    } catch (e) {
+                      toast(errorText(e, t), 'warning')
+                    }
                   }}
                 />
               </div>
@@ -96,9 +102,13 @@ export function StaffPage() {
         member={editing}
         onClose={() => setEditing(null)}
         onSave={async (m) => {
-          await saveStaff(m)
-          toast(t('admin.saved'), 'success')
-          setEditing(null)
+          try {
+            await saveStaff(m)
+            toast(t('admin.saved'), 'success')
+            setEditing(null)
+          } catch (e) {
+            toast(errorText(e, t), 'warning')
+          }
         }}
       />
     </div>
@@ -119,7 +129,9 @@ function StaffDialog({ member, onClose, onSave }: { member: Staff | 'new' | null
   }, [member, branches])
 
   if (!d) return null
-  const valid = d.name.trim().length > 1 && /^\d{4}$/.test(d.pin)
+  // API never returns PINs: for existing staff an empty field keeps the current PIN.
+  const keepPin = member !== 'new' && d.pin === ''
+  const valid = d.name.trim().length > 1 && (/^\d{4}$/.test(d.pin) || keepPin)
   const set = (p: Partial<Staff>) => setD({ ...d, ...p })
 
   return (
@@ -190,7 +202,11 @@ function StaffDialog({ member, onClose, onSave }: { member: Staff | 'new' | null
                 value={d.pin}
                 onChange={(e) => set({ pin: e.target.value.replace(/\D/g, '').slice(0, 4) })}
                 className="tabular"
+                placeholder={member !== 'new' && dataSource.requiresAuth ? '••••' : undefined}
               />
+              {member !== 'new' && dataSource.requiresAuth && (
+                <p className="text-xs text-muted-foreground">{t('admin.pinKeep')}</p>
+              )}
             </div>
           </div>
           <DialogFooter className="mt-2">

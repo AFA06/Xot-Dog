@@ -7,6 +7,7 @@ import { useI18n } from '@/i18n/useI18n'
 import { branchColor, shortBranchName } from '@/lib/branch'
 import { groupDigits } from '@/lib/money'
 import { cn } from '@/lib/utils'
+import { errorText } from '@/lib/errors'
 import { useApp } from '@/store/appStore'
 import { toast } from '@/store/toastStore'
 import { TONE_BAR } from '@/features/cashier/tones'
@@ -95,8 +96,12 @@ export function ProductsPage() {
               checked={p.active}
               aria-label={t('admin.active')}
               onCheckedChange={async (active) => {
-                await saveProduct({ ...p, active })
-                toast(`${l(p.name)}: ${active ? t('admin.active') : t('admin.inactive')}`, 'success')
+                try {
+                  await saveProduct({ ...p, active })
+                  toast(`${l(p.name)}: ${active ? t('admin.active') : t('admin.inactive')}`, 'success')
+                } catch (e) {
+                  toast(errorText(e, t), 'warning')
+                }
               }}
             />
             <Button variant="ghost" size="icon" className="shrink-0" onClick={() => setEditing(p)} aria-label={t('admin.edit')}>
@@ -114,9 +119,13 @@ export function ProductsPage() {
         branches={branches}
         onClose={() => setEditing(null)}
         onSave={async (p) => {
-          await saveProduct(p)
-          toast(t('admin.saved'), 'success')
-          setEditing(null)
+          try {
+            await saveProduct(p)
+            toast(t('admin.saved'), 'success')
+            setEditing(null)
+          } catch (e) {
+            toast(errorText(e, t), 'warning')
+          }
         }}
       />
     </div>

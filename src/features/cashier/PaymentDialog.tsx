@@ -1,15 +1,23 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Banknote, CreditCard, Info, Loader2 } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { NumPad } from '@/components/common/NumPad'
 import type { Order } from '@/domain/types'
 import { useI18n } from '@/i18n/useI18n'
 import { cartTotals, computeChange, quickCashOptions } from '@/lib/cart'
+import { errorText } from '@/lib/errors'
+import { ApiError } from '@/services'
 import { groupDigits } from '@/lib/money'
 import { cn } from '@/lib/utils'
 import { useApp } from '@/store/appStore'
 import { toast } from '@/store/toastStore'
 import { usePos } from './posStore'
+
+function newCheckoutKey(): string {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`
+}
 
 export function PaymentDialog({
   open,
@@ -25,14 +33,20 @@ export function PaymentDialog({
   onCreated(o: Order): void
 }) {
   const { t, money } = useI18n()
-  const { cart, payment, orderType, clear } = usePos()
+  const { cart, payment, orderType, clear, reprice } = usePos()
   const createOrder = useApp((s) => s.createOrder)
   const [entry, setEntry] = useState('')
   const [busy, setBusy] = useState(false)
   const { total, itemCount } = cartTotals(cart)
+  // One key per checkout: if the network drops after the server saved the order,
+  // pressing confirm again returns that same order instead of creating a duplicate.
+  const idempotencyKey = useRef('')
 
   useEffect(() => {
-    if (open) setEntry('')
+    if (open) {
+      setEntry('')
+      idempotencyKey.current = newCheckoutKey()
+    }
   }, [open])
 
   const tendered = entry ? Number(entry) : total
@@ -50,12 +64,17 @@ export function PaymentDialog({
         lines: cart,
         paymentMethod: payment,
         tendered: payment === 'cash' ? tendered : undefined,
+        idempotencyKey: idempotencyKey.current,
       })
       clear()
       toast(`${t('pos.orderCreated')}: ${order.number}`, 'success')
       onCreated(order)
     } catch (e) {
-      toast(e instanceof Error ? e.message : String(e), 'warning')
+      if (e instanceof ApiError && e.code === 'price_changed') {
+        reprice(useApp.getState().catalog)
+        idempotencyKey.current = newCheckoutKey()
+      }
+      toast(errorText(e, t), 'warning')
     } finally {
       setBusy(false)
     }

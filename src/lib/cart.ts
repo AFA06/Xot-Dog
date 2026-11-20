@@ -150,3 +150,16 @@ export function quickCashOptions(total: number): number[] {
   }
   return [...set].sort((a, b) => a - b).slice(0, 5)
 }
+
+/** Re-applies current catalog prices to cart lines (after the server reported a price change). */
+export function repriceLines(cart: CartLine[], products: Product[], groups: ModifierGroup[]): CartLine[] {
+  return cart.map((l) => {
+    const p = products.find((x) => x.id === l.productId)
+    if (!p) return l
+    const modifiers = l.modifiers.map((m) => {
+      const o = groups.find((g) => g.id === m.groupId)?.options.find((x) => x.id === m.optionId)
+      return o ? { ...m, name: o.name, priceDelta: o.priceDelta } : m
+    })
+    return { ...l, name: p.name, basePrice: p.price, modifiers }
+  })
+}

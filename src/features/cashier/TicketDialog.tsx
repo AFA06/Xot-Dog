@@ -3,6 +3,7 @@ import { CheckCircle2, Loader2, Printer, Plus } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { TicketView } from '@/components/common/TicketView'
 import { useI18n } from '@/i18n/useI18n'
+import { errorText } from '@/lib/errors'
 import { buildTicket, simulatedPrinter } from '@/services/printing'
 import { useApp } from '@/store/appStore'
 import { toast } from '@/store/toastStore'
@@ -28,6 +29,8 @@ export function TicketDialog({ orderId, isNew, onClose }: { orderId: string | nu
       await simulatedPrinter.print(ticket, { orderId: order.id, copy: isCopy })
       await registerReprint(order.id)
       toast(t('pos.printed'), 'info')
+    } catch (e) {
+      toast(errorText(e, t), 'warning')
     } finally {
       setBusy(false)
     }

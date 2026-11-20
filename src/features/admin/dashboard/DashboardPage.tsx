@@ -6,18 +6,11 @@ import { useI18n } from '@/i18n/useI18n'
 import { branchColor, shortBranchName } from '@/lib/branch'
 import { fromDateKey } from '@/lib/dates'
 import { groupDigits } from '@/lib/money'
-import {
-  bestsellers,
-  byHour,
-  categoryRevenue,
-  peakHour,
-  percentChange,
-  revenueByDay,
-  summarize,
-} from '@/lib/reports'
+import { peakHour, percentChange, summarize } from '@/lib/reports'
 import { cn } from '@/lib/utils'
+import { LoadGate } from '@/components/common/LoadGate'
 import { useApp } from '@/store/appStore'
-import { useFilteredOrders } from '../adminFilters'
+import { useDashboard } from './useDashboard'
 import { ChartCard, ChartTooltip, DataTable, Legend } from './ChartCard'
 import { KpiTile } from './KpiTile'
 
@@ -35,20 +28,27 @@ export function DashboardPage() {
   const branches = useApp((s) => s.branches)
   const products = useApp((s) => s.catalog.products)
   const categories = useApp((s) => s.catalog.categories)
-  const { range, orders, previous, branchIds } = useFilteredOrders()
+  const { data, error, loading, branchIds } = useDashboard()
   const [bestBy, setBestBy] = useState<'quantity' | 'revenue'>('quantity')
 
-  const sum = useMemo(() => summarize(orders), [orders])
-  const prev = useMemo(() => summarize(previous), [previous])
-  const daily = useMemo(() => revenueByDay(orders, range, branchIds), [orders, range, branchIds])
-  const hourly = useMemo(() => byHour(orders, branchIds), [orders, branchIds])
+  const empty = useMemo(() => summarize([]), [])
+  const sum = data?.summary ?? empty
+  const prev = data?.previous ?? empty
+  const daily = data?.daily ?? []
+  const hourly = data?.hourly ?? []
   const peak = peakHour(hourly)
-  const best = useMemo(() => bestsellers(orders, bestBy, 8), [orders, bestBy])
-  const cats = useMemo(() => categoryRevenue(orders, products), [orders, products])
+  const best = (bestBy === 'quantity' ? data?.bestsellersByQuantity : data?.bestsellersByRevenue) ?? []
+  const cats: Record<string, number> = data?.categoryRevenue ?? {}
   const perBranch = useMemo(
-    () => branches.map((b) => ({ branch: b, s: summarize(orders.filter((o) => o.branchId === b.id)) })),
-    [branches, orders],
+    () => branches.map((b) => ({ branch: b, s: data?.perBranch.find((x) => x.branchId === b.id)?.summary ?? empty })),
+    [branches, data, empty],
   )
+
+  if (!data) {
+    return <LoadGate status={error ? 'error' : 'loading'} error={error ?? undefined} onRetry={() => window.location.reload()}>
+        {null}
+      </LoadGate>
+  }
 
   const shownBranches = branches.filter((b) => branchIds.includes(b.id))
   const multi = shownBranches.length > 1
@@ -56,7 +56,7 @@ export function DashboardPage() {
   const productName = (id: string) => l(products.find((p) => p.id === id)?.name) || id
   const legendItems = shownBranches.map((b) => ({ label: shortBranchName(b, locale), color: branchColor(branches, b.id) }))
 
-  if (sum.orders === 0 && sum.voided === 0) {
+  if (sum.orders === 0 && sum.voided === 0 && !loading) {
     return (
       <div className="rounded-2xl border bg-card p-10 text-center text-muted-foreground">{t('admin.noData')}</div>
     )
@@ -274,17 +274,17 @@ export function DashboardPage() {
           <h2 className="mb-3 font-semibold">{t('admin.categorySales')}</h2>
           <ul className="space-y-3">
             {[...categories]
-              .sort((a, b) => cats[b.id] - cats[a.id])
+              .sort((a, b) => (cats[b.id] ?? 0) - (cats[a.id] ?? 0))
               .map((c) => (
                 <li key={c.id}>
                   <div className="flex justify-between text-sm">
                     <span>{l(c.name)}</span>
                     <span className="font-medium tabular">
-                      {compact(cats[c.id])} <span className="text-muted-foreground">· {Math.round((cats[c.id] / catTotal) * 100)}%</span>
+                      {compact((cats[c.id] ?? 0))} <span className="text-muted-foreground">· {Math.round(((cats[c.id] ?? 0) / catTotal) * 100)}%</span>
                     </span>
                   </div>
                   <div className="mt-1 h-2 rounded-full bg-muted">
-                    <div className="h-full rounded-full" style={{ width: `${(cats[c.id] / catTotal) * 100}%`, background: NEUTRAL }} />
+                    <div className="h-full rounded-full" style={{ width: `${((cats[c.id] ?? 0) / catTotal) * 100}%`, background: NEUTRAL }} />
                   </div>
                 </li>
               ))}

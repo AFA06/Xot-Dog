@@ -1,8 +1,8 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { DateRange, Order } from '@/domain/types'
-import { addDays, comparisonRange, customRange, presetRange, startOfDay, toDateKey, type RangePreset } from '@/lib/dates'
+import { addDays, customRange, presetRange, startOfDay, toDateKey, type RangePreset } from '@/lib/dates'
 import { filterOrders } from '@/lib/reports'
 import { useApp } from '@/store/appStore'
 
@@ -47,18 +47,21 @@ export function useSelectedBranchIds(): string[] {
   return useMemo(() => (branch === 'all' ? branches.map((b) => b.id) : [branch]), [branch, branches])
 }
 
-/** Orders matching the admin branch + date filters, plus the previous equal-length period. */
-export function useFilteredOrders(): { range: DateRange; orders: Order[]; previous: Order[]; branchIds: string[] } {
+/** Orders matching the admin branch + date filters (fetched from the data source per range). */
+export function useFilteredOrders(): { range: DateRange; orders: Order[]; branchIds: string[]; loading: boolean } {
   const all = useApp((s) => s.orders)
+  const loading = useApp((s) => s.ordersLoading)
+  const loadOrders = useApp((s) => s.loadOrders)
   const range = useAdminRange()
   const branchIds = useSelectedBranchIds()
+  const key = branchIds.join(',')
+
+  useEffect(() => {
+    void loadOrders({ branchIds: key ? key.split(',') : undefined, from: range.from, to: range.to }).catch(() => {})
+  }, [loadOrders, key, range.from, range.to])
+
   return useMemo(
-    () => ({
-      range,
-      branchIds,
-      orders: filterOrders(all, range, branchIds),
-      previous: filterOrders(all, comparisonRange(range), branchIds),
-    }),
-    [all, range, branchIds],
+    () => ({ range, branchIds, loading, orders: filterOrders(all, range, branchIds) }),
+    [all, range, branchIds, loading],
   )
 }

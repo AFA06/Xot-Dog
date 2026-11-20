@@ -8,8 +8,10 @@ import { DEMO_BRANCHES, DEMO_CATALOG } from '@/data/demo/catalog'
 import { DEMO_STAFF } from '@/data/demo/staff'
 import { generateDemoOrders } from '@/data/demo/orders'
 import { cartTotals, lineTotal, unitPrice } from '@/lib/cart'
+import { bestsellers, byHour, categoryRevenue, filterOrders, revenueByDay, staffStats, summarize } from '@/lib/reports'
+import { ApiError } from '@/services/api/client'
 import { demoPaymentRecorder } from '@/services/payment'
-import type { DataSource, NewOrderInput, OrderQuery } from '@/services/types'
+import type { DashboardData, DataSource, NewOrderInput, OrderQuery } from '@/services/types'
 import { clearDemoStorage, readJson, writeJson } from './storage'
 
 const K_ORDERS = 'orders'
@@ -43,6 +45,32 @@ export function createDemoDataSource(now: () => Date = () => new Date()): DataSo
 
   return {
     kind: 'demo',
+    requiresAuth: false,
+    auth: {
+      directory: async () => staff.filter((s) => s.active),
+      async login(staffId, pin, branchId) {
+        const member = staff.find((s) => s.id === staffId && s.active)
+        if (!member || member.pin !== pin) throw new ApiError(401, 'wrong_pin', 'Invalid staff or PIN')
+        return { token: 'demo', staffId, role: member.role, branchId, expiresAt: new Date(now().getTime() + 12 * 3600_000).toISOString() }
+      },
+    },
+    analytics: {
+      async dashboard(q): Promise<DashboardData> {
+        const orders = filterOrders(all(), { from: q.from, to: q.to }, q.branchIds)
+        const previous = filterOrders(all(), { from: q.compareFrom, to: q.compareTo }, q.branchIds)
+        return {
+          summary: summarize(orders),
+          previous: summarize(previous),
+          perBranch: q.branchIds.map((b) => ({ branchId: b, summary: summarize(orders.filter((o) => o.branchId === b)) })),
+          daily: revenueByDay(orders, { from: q.from, to: q.to }, q.branchIds),
+          hourly: byHour(orders, q.branchIds),
+          bestsellersByQuantity: bestsellers(orders, 'quantity', 8),
+          bestsellersByRevenue: bestsellers(orders, 'revenue', 8),
+          categoryRevenue: categoryRevenue(orders, products),
+          staff: [...staffStats(orders)].map(([staffId, v]) => ({ staffId, ...v })),
+        }
+      },
+    },
     branches: { list: async () => DEMO_BRANCHES },
     catalog: {
       get: async () => catalog(),
@@ -55,8 +83,12 @@ export function createDemoDataSource(now: () => Date = () => new Date()): DataSo
     },
     staff: {
       list: async () => staff,
-      async save(member) {
-        const exists = staff.some((s) => s.id === member.id)
+      async save(input) {
+        const prev = staff.find((s) => s.id === input.id)
+        // Empty PIN = keep the current one (same contract as the API).
+        const member = input.pin ? input : { ...input, pin: prev?.pin ?? '' }
+        if (!member.pin) throw new Error('A 4-digit PIN is required for new staff')
+        const exists = !!prev
         staff = exists ? staff.map((s) => (s.id === member.id ? member : s)) : [...staff, member]
         writeJson(K_STAFF, staff)
         return member

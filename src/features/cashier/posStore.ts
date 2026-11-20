@@ -1,6 +1,6 @@
 import { create } from 'zustand'
-import type { CategoryId, OrderType, PaymentMethod, Product, SelectedModifier } from '@/domain/types'
-import { addToCart, removeLine, setLineQuantity, type CartLine } from '@/lib/cart'
+import type { Catalog, CategoryId, OrderType, PaymentMethod, Product, SelectedModifier } from '@/domain/types'
+import { addToCart, removeLine, repriceLines, setLineQuantity, type CartLine } from '@/lib/cart'
 
 interface PosState {
   cart: CartLine[]
@@ -14,6 +14,7 @@ interface PosState {
   setQty(key: string, qty: number): void
   remove(key: string): void
   clear(): void
+  reprice(catalog: Catalog): void
 }
 
 export const usePos = create<PosState>((set) => ({
@@ -28,4 +29,5 @@ export const usePos = create<PosState>((set) => ({
   setQty: (key, qty) => set((s) => ({ cart: setLineQuantity(s.cart, key, qty) })),
   remove: (key) => set((s) => ({ cart: removeLine(s.cart, key) })),
   clear: () => set({ cart: [], payment: 'cash' }),
+  reprice: (catalog) => set((s) => ({ cart: repriceLines(s.cart, catalog.products, catalog.modifierGroups) })),
 }))
