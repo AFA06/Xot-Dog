@@ -1,0 +1,87 @@
+import { useMemo, useState } from 'react'
+import { Navigate } from 'react-router-dom'
+import type { Order, Product } from '@/domain/types'
+import { useApp } from '@/store/appStore'
+import { useSession } from '@/store/sessionStore'
+import { PosHeader } from './PosHeader'
+import { CategoryRail } from './CategoryRail'
+import { ProductGrid } from './ProductGrid'
+import { CartPanel } from './CartPanel'
+import { ModifierDialog } from './ModifierDialog'
+import { PaymentDialog } from './PaymentDialog'
+import { TicketDialog } from './TicketDialog'
+import { HistorySheet } from './HistorySheet'
+import { usePos } from './posStore'
+
+export function CashierPage() {
+  const branchId = useSession((s) => s.posBranchId)
+  const cashierId = useSession((s) => s.posCashierId)
+  const branches = useApp((s) => s.branches)
+  const staff = useApp((s) => s.staff)
+  const catalog = useApp((s) => s.catalog)
+  const add = usePos((s) => s.add)
+
+  const [modProduct, setModProduct] = useState<Product | null>(null)
+  const [paying, setPaying] = useState(false)
+  const [ticketOrderId, setTicketOrderId] = useState<string | null>(null)
+  const [ticketIsNew, setTicketIsNew] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
+
+  const branch = branches.find((b) => b.id === branchId)
+  const cashier = staff.find((s) => s.id === cashierId)
+
+  const products = useMemo(
+    () => catalog.products.filter((p) => p.active && branch && p.branchIds.includes(branch.id)),
+    [catalog.products, branch],
+  )
+
+  if (!branch || !cashier) return <Navigate to="/" replace />
+
+  const onProduct = (p: Product) => {
+    if (p.modifierGroupIds.length) setModProduct(p)
+    else add(p)
+  }
+
+  const onOrderCreated = (o: Order) => {
+    setPaying(false)
+    setTicketIsNew(true)
+    setTicketOrderId(o.id)
+  }
+
+  return (
+    <div className="pos-root flex h-dvh flex-col overflow-hidden bg-background select-none">
+      <PosHeader branch={branch} cashier={cashier} onHistory={() => setHistoryOpen(true)} />
+      <div className="flex min-h-0 flex-1">
+        <CategoryRail categories={catalog.categories} products={products} />
+        <ProductGrid products={products} onSelect={onProduct} />
+        <CartPanel onCheckout={() => setPaying(true)} />
+      </div>
+
+      <ModifierDialog product={modProduct} groups={catalog.modifierGroups} onClose={() => setModProduct(null)} />
+      <PaymentDialog
+        open={paying}
+        onClose={() => setPaying(false)}
+        branchId={branch.id}
+        cashierId={cashier.id}
+        onCreated={onOrderCreated}
+      />
+      <TicketDialog
+        orderId={ticketOrderId}
+        isNew={ticketIsNew}
+        onClose={() => {
+          setTicketOrderId(null)
+          setTicketIsNew(false)
+        }}
+      />
+      <HistorySheet
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        branchId={branch.id}
+        onOpenOrder={(id) => {
+          setTicketIsNew(false)
+          setTicketOrderId(id)
+        }}
+      />
+    </div>
+  )
+}
